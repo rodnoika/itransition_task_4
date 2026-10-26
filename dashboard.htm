@@ -1,0 +1,438 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ dashboard.store }} | Bookstore Analytics</title>
+
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.7.1/dist/css/tabler.min.css">
+
+    <style>
+        body {
+            background: #f5f7fb;
+        }
+
+        .page-header {
+            padding-top: 2rem;
+        }
+
+        .metric-value {
+            font-size: clamp(1.5rem, 2.5vw, 2rem);
+            font-weight: 650;
+        }
+
+        .chart-box {
+            position: relative;
+            height: 350px;
+        }
+
+        .dashboard-card {
+            transition: transform .15s, box-shadow .15s;
+        }
+
+        .dashboard-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 14px rgba(0, 0, 0, .06);
+        }
+
+        .buyer-ids {
+            display: block;
+            padding: 1rem;
+            background: #f1f5f9;
+            color: #182433;
+            border-radius: 8px;
+            overflow-wrap: anywhere;
+        }
+
+        .author-name {
+            overflow-wrap: anywhere;
+        }
+
+        .nav-tabs .nav-link {
+            padding: 1rem 1.25rem;
+        }
+
+        @media (max-width: 575px) {
+            .chart-box {
+                height: 280px;
+            }
+
+            .nav-tabs .nav-link {
+                padding: .8rem;
+            }
+        }
+    </style>
+</head>
+
+<body>
+<div class="page">
+    <header class="navbar navbar-expand-md bg-white border-bottom">
+        <div class="container-xl">
+            <span class="navbar-brand fw-bold">
+                {{ dashboard.store }} / Analytics
+            </span>
+
+            <div class="ms-auto d-flex align-items-center gap-2">
+
+                <div class="dropdown">
+                    <button class="btn btn-primary dropdown-toggle"
+                            type="button" data-bs-toggle="dropdown"
+                            aria-expanded="false">
+                        {{ dashboard.store }}
+                    </button>
+
+                    <div class="dropdown-menu dropdown-menu-end">
+                        {% for store_id in stores %}
+                        <a href="/store/{{ store_id }}"
+                           class="dropdown-item {% if store_id == dashboard.store_id %}active{% endif %}">
+                            STORE{{ store_id }}
+                        </a>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="page-wrapper">
+        <div class="page-header">
+            <div class="container-xl">
+                <div class="page-pretitle">Bookstore performance</div>
+                <h1 class="page-title">Sales Dashboard</h1>
+                <p class="text-secondary mt-2">
+                    Reporting period:
+                    {{ dashboard.period_start }} => {{ dashboard.period_end }}
+                </p>
+            </div>
+        </div>
+
+        <div class="page-body">
+            <div class="container-xl">
+                <div class="row row-cards mb-4">
+                    <div class="col-sm-6 col-xl-3">
+                        <div class="card dashboard-card h-100">
+                            <div class="card-body">
+                                <div class="subheader">Total revenue</div>
+                                <div class="metric-value my-2">
+                                    ${{ "{:,.2f}".format(dashboard.total_revenue_usd) }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-sm-6 col-xl-3">
+                        <div class="card dashboard-card h-100">
+                            <div class="card-body">
+                                <div class="subheader">Unique users</div>
+                                <div class="metric-value my-2">
+                                    {{ "{:,}".format(dashboard.unique_users) }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-sm-6 col-xl-3">
+                        <div class="card dashboard-card h-100">
+                            <div class="card-body">
+                                <div class="subheader">Unique author sets</div>
+                                <div class="metric-value my-2">
+                                    {{ "{:,}".format(dashboard.unique_author_sets) }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-sm-6 col-xl-3">
+                        <div class="card dashboard-card h-100">
+                            <div class="card-body">
+                                <div class="subheader">Books sold</div>
+                                <div class="metric-value my-2">
+                                    {{ "{:,}".format(dashboard.books_sold) }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <ul class="nav nav-tabs card-header-tabs" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="revenue-tab"
+                                        data-bs-toggle="tab" data-bs-target="#revenue"
+                                        type="button" role="tab" aria-selected="true">
+                                    Revenue
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="users-tab"
+                                        data-bs-toggle="tab" data-bs-target="#users"
+                                        type="button" role="tab" aria-selected="false">
+                                    Users
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="authors-tab"
+                                        data-bs-toggle="tab" data-bs-target="#authors"
+                                        type="button" role="tab" aria-selected="false">
+                                    Authors
+                                </button>
+                            </li>
+                        </ul>
+                    </div>
+
+                    <div class="card-body">
+                        <div class="tab-content">
+                            <section class="tab-pane fade show active" id="revenue"
+                                     role="tabpanel" aria-labelledby="revenue-tab">
+                                <div class="row g-4">
+                                    <div class="col-lg-8">
+                                        <h2 class="card-title">Daily Revenue</h2>
+                                        <p class="text-secondary">
+                                            Revenue generated for each calendar day.
+                                        </p>
+
+                                        <div class="chart-box">
+                                            <canvas id="revenue-chart"
+                                                    role="img"
+                                                    aria-label="Daily revenue chart in USD"></canvas>
+                                        </div>
+
+                                        <p id="chart-error" class="text-danger mt-3" hidden>
+                                            Unable to load chart. Check your internet connection.
+                                        </p>
+                                    </div>
+
+                                    <div class="col-lg-4">
+                                        <h2 class="card-title">Top 5 Days by Revenue</h2>
+                                        <p class="text-secondary">
+                                            Highest revenue days for {{ dashboard.store }}.
+                                        </p>
+
+                                        <div class="table-responsive">
+                                            <table class="table table-vcenter">
+                                                <thead>
+                                                    <tr>
+                                                        <th>#</th>
+                                                        <th>Date</th>
+                                                        <th class="text-end">Revenue</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {% for day in dashboard.top_days %}
+                                                    <tr>
+                                                        <td class="text-secondary">{{ loop.index }}</td>
+                                                        <td class="text-nowrap">{{ day.date }}</td>
+                                                        <td class="text-end fw-semibold">
+                                                            ${{ "{:,.2f}".format(day.revenue_usd) }}
+                                                        </td>
+                                                    </tr>
+                                                    {% endfor %}
+                                                </tbody>
+                                            </table>
+                                        </div>
+
+                                        <div class="mt-4">
+                                            <div class="subheader">Total orders</div>
+                                            <div class="h2 mb-0">
+                                                {{ "{:,}".format(dashboard.order_count) }}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section class="tab-pane fade" id="users"
+                                     role="tabpanel" aria-labelledby="users-tab">
+                                <div class="row g-4">
+                                    <div class="col-lg-5">
+                                        <h2 class="card-title">Real Unique Users</h2>
+
+                                        <div class="display-4 fw-bold text-blue mb-3">
+                                            {{ "{:,}".format(dashboard.unique_users) }}
+                                        </div>
+
+                                        <p class="text-secondary">
+                                            Records are matched using name, address,
+                                            phone and email. At least three fields
+                                            must match to identify the same user.
+                                        </p>
+
+                                        <p class="text-secondary">
+                                            Missing values are not counted as matches.
+                                        </p>
+                                    </div>
+
+                                    <div class="col-lg-7">
+                                        <h2 class="card-title">
+                                            Best Buyer{% if dashboard.best_buyers|length > 1 %}s{% endif %}
+                                        </h2>
+
+                                        <p class="text-secondary">
+                                            Highest total spending across all known aliases.
+                                        </p>
+
+                                        {% for buyer in dashboard.best_buyers %}
+                                        <div class="border rounded-3 p-4 mb-3">
+                                            <div class="subheader mb-2">Total spent</div>
+                                            <div class="h1 text-blue mb-4">
+                                                ${{ "{:,.2f}".format(buyer.spent_usd) }}
+                                            </div>
+
+                                            <div class="subheader mb-2">
+                                                User IDs including aliases
+                                            </div>
+                                            <code class="buyer-ids">
+                                                {{ buyer.ids | tojson }}
+                                            </code>
+                                        </div>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section class="tab-pane fade" id="authors"
+                                     role="tabpanel" aria-labelledby="authors-tab">
+                                <div class="row g-4">
+                                    <div class="col-lg-7">
+                                        <h2 class="card-title">Most Popular Author Set</h2>
+
+                                        {% for author_set in dashboard.popular_sets %}
+                                        <div class="border rounded-3 p-4 mb-3">
+                                            <span class="badge bg-blue-lt mb-3">
+                                                Author set
+                                            </span>
+
+                                            <h3 class="h2 author-name">
+                                                {{ author_set.names | join(" + ") }}
+                                            </h3>
+
+                                            <div class="h1 text-blue mb-1">
+                                                {{ "{:,}".format(author_set.books_sold) }}
+                                            </div>
+                                            <div class="text-secondary">copies sold</div>
+                                        </div>
+                                        {% endfor %}
+                                    </div>
+
+                                    <div class="col-lg-5">
+                                        <h2 class="card-title">
+                                            Most Popular Individual Author
+                                        </h2>
+
+                                        {% for author in dashboard.popular_individuals %}
+                                        <div class="border rounded-3 p-4 mb-3">
+                                            <span class="badge bg-green-lt mb-3">
+                                                Individual author
+                                            </span>
+
+                                            <h3 class="h2 author-name">
+                                                {{ author.name }}
+                                            </h3>
+
+                                            <div class="h1 text-green mb-1">
+                                                {{ "{:,}".format(author.books_sold) }}
+                                            </div>
+                                            <div class="text-secondary">copies credited</div>
+                                        </div>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                            </section>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+</div>
+
+<script id="chart-data" type="application/json">
+    {{ dashboard.chart | tojson }}
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/@tabler/core@1.7.1/dist/js/tabler.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"></script>
+
+<script>
+    const chartData = JSON.parse(
+        document.getElementById("chart-data").textContent
+    );
+
+    const money = new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency: "USD",
+        minimumFractionDigits: 2
+    });
+
+    if (typeof Chart === "undefined") {
+        document.getElementById("chart-error").hidden = false;
+    } else {
+        const revenueChart = new Chart(
+            document.getElementById("revenue-chart"),
+            {
+                type: "line",
+                data: {
+                    labels: chartData.dates,
+                    datasets: [{
+                        label: "Daily revenue",
+                        data: chartData.revenue_usd,
+                        borderColor: "#206bc4",
+                        backgroundColor: "rgba(32, 107, 196, 0.08)",
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        pointHoverRadius: 5,
+                        pointHitRadius: 10,
+                        fill: true,
+                        tension: 0.15
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: "index",
+                        intersect: false
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: context => money.format(context.parsed.y)
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            ticks: {
+                                maxTicksLimit: 8,
+                                maxRotation: 45
+                            },
+                            grid: {
+                                display: false
+                            }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: value => "$" + Number(value).toLocaleString("en-US")
+                            },
+                            title: {
+                                display: true,
+                                text: "Revenue · USD"
+                            }
+                        }
+                    }
+                }
+            }
+        );
+
+        document.getElementById("revenue-tab")
+            .addEventListener("shown.bs.tab", () => revenueChart.resize());
+    }
+</script>
+</body>
+</html>
