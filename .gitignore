@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+.venv/
+.venv-ner/
+__pycache__/
+.pytest_cache/
+.vercel/
+STORE*_cleaned/
+data/
+*.log

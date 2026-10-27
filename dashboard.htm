@@ -1,4 +1,5 @@
 
+{% if not fragment %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -53,6 +54,128 @@
             padding: 1rem 1.25rem;
         }
 
+        .assistant-toggle {
+            position: fixed;
+            right: 24px;
+            bottom: 24px;
+            z-index: 1060;
+            display: grid;
+            place-items: center;
+            width: 56px;
+            height: 56px;
+            padding: 0;
+            border: 0;
+            border-radius: 50%;
+            color: #fff;
+            background: #206bc4;
+            box-shadow: 0 4px 16px rgba(24, 36, 51, .22);
+            cursor: pointer;
+        }
+
+        .assistant-toggle:hover {
+            background: #1a569d;
+        }
+
+        .assistant-toggle:focus-visible,
+        .assistant-close:focus-visible {
+            outline: 3px solid #90b9ec;
+            outline-offset: 4px;
+        }
+
+        .assistant-panel {
+            position: fixed;
+            right: 24px;
+            bottom: 96px;
+            z-index: 1060;
+            display: flex;
+            flex-direction: column;
+            width: 380px;
+            max-width: calc(100vw - 32px);
+            max-height: calc(100vh - 120px);
+            max-height: min(600px, calc(100dvh - 120px));
+            overflow: hidden;
+            border: 1px solid #dce1e7;
+            border-radius: 16px;
+            background: #fff;
+            box-shadow: 0 8px 32px rgba(24, 36, 51, .16);
+        }
+
+        .assistant-panel[hidden] {
+            display: none;
+        }
+
+        .assistant-panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-shrink: 0;
+            padding: 14px 16px;
+            border-bottom: 1px solid #e6e9ed;
+        }
+
+        .assistant-panel-header h2 {
+            margin: 0;
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .assistant-panel-header p {
+            margin: 2px 0 0;
+            color: #667382;
+            font-size: 12px;
+        }
+
+        .assistant-close {
+            display: grid;
+            place-items: center;
+            flex-shrink: 0;
+            width: 32px;
+            height: 32px;
+            padding: 0;
+            border: 0;
+            border-radius: 8px;
+            color: #667382;
+            background: transparent;
+            cursor: pointer;
+        }
+
+        .assistant-close:hover {
+            color: #182433;
+            background: #f1f5f9;
+        }
+
+        .assistant-panel-body {
+            min-height: 0;
+            padding: 16px;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+        }
+
+        .assistant-panel .btn-sm {
+            white-space: normal;
+        }
+
+        .assistant-panel #question {
+            min-height: 84px;
+            max-height: 200px;
+        }
+
+        @media (max-width: 575px) {
+            .assistant-toggle {
+                right: 16px;
+                bottom: 16px;
+            }
+
+            .assistant-panel {
+                right: 16px;
+                bottom: 88px;
+                width: calc(100vw - 32px);
+                max-height: calc(100vh - 104px);
+                max-height: min(600px, calc(100dvh - 104px));
+            }
+        }
+
         @media (max-width: 575px) {
             .chart-box {
                 height: 280px;
@@ -66,6 +189,59 @@
 </head>
 
 <body>
+<button id="assistant-toggle" class="assistant-toggle" type="button" aria-label="Open assistant" aria-controls="assistant-panel" aria-expanded="false" title="Data assistant">
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5Z"/>
+        <path d="M8 10h8M8 14h5"/>
+    </svg>
+</button>
+<section id="assistant-panel" class="card assistant-panel" role="dialog" aria-modal="false" aria-labelledby="assistant-title" hidden>
+        <header class="assistant-panel-header">
+            <div>
+                <h2 id="assistant-title">Data assistant</h2>
+            </div>
+            <button id="assistant-close" class="assistant-close" type="button" aria-label="Close assistant" title="Close">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg>
+            </button>
+        </header>
+        <div class="card-body assistant-panel-body">
+            <form id="assistant-form">
+                <label for="question" class="form-label">Question or command</label>
+                <textarea id="question" class="form-control mb-2" maxlength="1500" rows="2" required placeholder="Select users with emails starting with s or p"></textarea>
+                <button id="ask-button" type="submit" class="btn btn-primary">Send</button>
+                <span id="busy" class="text-secondary ms-2" role="status" hidden>Working…</span>
+            </form>
+            <div class="d-flex flex-wrap gap-2 mt-3">
+                <button type="button" class="btn btn-sm" data-question="How many unique users are there across all five stores?">Users across all stores</button>
+                <button type="button" class="btn btn-sm" data-question="Select users with emails starting with s or p">Email: s or p</button>
+                <button type="button" class="btn btn-sm" data-question="Keep only books with people's names in their titles">Books with names</button>
+            </div>
+            <p id="assistant-error" class="text-danger mt-3" role="alert" hidden></p>
+            <div id="assistant-answer" class="mt-3" role="status" style="white-space:pre-wrap;overflow-wrap:anywhere"></div>
+            <details id="evidence-box" class="mt-3" hidden>
+                <summary>Calculation details</summary>
+                <pre id="evidence" class="mt-2" style="max-height:320px;white-space:pre-wrap;overflow-wrap:anywhere"></pre>
+            </details>
+            <details class="mt-3">
+                <summary>Manual filters</summary>
+                <form id="filter-form" class="row g-3 mt-1">
+                    <div class="col-12"><label class="form-label" for="email-prefixes">Email starts with (comma-separated)</label><input id="email-prefixes" class="form-control" maxlength="120" placeholder="s, p"></div>
+                    <div class="col-12"><label class="form-label" for="person-name">Person names in titles</label><select id="person-name" class="form-select"><option value="any">All books</option><option value="include">Keep books with names</option><option value="exclude">Exclude books with names</option></select></div>
+                    <div class="col-12"><label class="form-label" for="title-contains">Title contains</label><input id="title-contains" class="form-control" maxlength="120"></div>
+                    <div class="col-6"><label class="form-label" for="date-from">From date</label><input id="date-from" class="form-control" type="date"></div>
+                    <div class="col-6"><label class="form-label" for="date-to">To date</label><input id="date-to" class="form-control" type="date"></div>
+                    <div class="col-12"><button class="btn" type="submit">Apply filters</button></div>
+                </form>
+            </details>
+            <div class="d-flex flex-wrap gap-2 mt-3 align-items-center">
+                <button id="reset-filters" class="btn btn-sm" type="button">Reset filters</button>
+                <button id="undo-view" class="btn btn-sm" type="button" disabled>Undo change</button>
+                <span id="view-scope" class="text-secondary"></span>
+            </div>
+        </div>
+</section>
+<div id="dashboard-content">
+{% endif %}
 <div class="page">
     <header class="navbar navbar-expand-md bg-white border-bottom">
         <div class="container-xl">
@@ -179,11 +355,18 @@
                                     Authors
                                 </button>
                             </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="books-tab" data-bs-toggle="tab" data-bs-target="#books" type="button" role="tab" aria-selected="false">Books</button>
+                            </li>
                         </ul>
                     </div>
 
                     <div class="card-body">
                         <div class="tab-content">
+                            <section class="tab-pane fade" id="books" role="tabpanel" aria-labelledby="books-tab">
+                                <h2 class="card-title">Books in the current view</h2>
+                                <p class="text-secondary">Matching books and detected names are listed below.</p>
+                            </section>
                             <section class="tab-pane fade show active" id="revenue"
                                      role="tabpanel" aria-labelledby="revenue-tab">
                                 <div class="row g-4">
@@ -348,91 +531,32 @@
     </main>
 </div>
 
-<script id="chart-data" type="application/json">
-    {{ dashboard.chart | tojson }}
-</script>
-
+{% if not fragment %}
+</div>
+<section class="container-xl pb-4" aria-labelledby="preview-title">
+    <div class="card"><div class="card-body">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
+            <h2 id="preview-title" class="card-title mb-0">All users</h2>
+            <div class="d-flex align-items-center gap-2">
+                <label for="page-size" class="form-label mb-0 text-nowrap">Rows per page</label>
+                <select id="page-size" class="form-select form-select-sm w-auto">
+                    <option value="10" selected>10</option>
+                    <option value="20">20</option>
+                    <option value="30">30</option>
+                    <option value="40">40</option>
+                    <option value="50">50</option>
+                </select>
+            </div>
+        </div>
+        <p id="preview-count" class="text-secondary" role="status"></p>
+        <div class="table-responsive"><table class="table table-vcenter"><thead id="preview-head"></thead><tbody id="preview-body"></tbody></table></div>
+        <div class="d-flex gap-2"><button id="previous-page" class="btn btn-sm" type="button">Previous</button><button id="next-page" class="btn btn-sm" type="button">Next</button></div>
+    </div></div>
+</section>
+<script id="bootstrap-data" type="application/json">{{ {'state': initial_state, 'chart': dashboard.chart} | tojson }}</script>
 <script src="https://cdn.jsdelivr.net/npm/@tabler/core@1.7.1/dist/js/tabler.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"></script>
-
-<script>
-    const chartData = JSON.parse(
-        document.getElementById("chart-data").textContent
-    );
-
-    const money = new Intl.NumberFormat("en-US", {
-        style: "currency",
-        currency: "USD",
-        minimumFractionDigits: 2
-    });
-
-    if (typeof Chart === "undefined") {
-        document.getElementById("chart-error").hidden = false;
-    } else {
-        const revenueChart = new Chart(
-            document.getElementById("revenue-chart"),
-            {
-                type: "line",
-                data: {
-                    labels: chartData.dates,
-                    datasets: [{
-                        label: "Daily revenue",
-                        data: chartData.revenue_usd,
-                        borderColor: "#206bc4",
-                        backgroundColor: "rgba(32, 107, 196, 0.08)",
-                        borderWidth: 2,
-                        pointRadius: 0,
-                        pointHoverRadius: 5,
-                        pointHitRadius: 10,
-                        fill: true,
-                        tension: 0.15
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    interaction: {
-                        mode: "index",
-                        intersect: false
-                    },
-                    plugins: {
-                        legend: {
-                            display: false
-                        },
-                        tooltip: {
-                            callbacks: {
-                                label: context => money.format(context.parsed.y)
-                            }
-                        }
-                    },
-                    scales: {
-                        x: {
-                            ticks: {
-                                maxTicksLimit: 8,
-                                maxRotation: 45
-                            },
-                            grid: {
-                                display: false
-                            }
-                        },
-                        y: {
-                            beginAtZero: true,
-                            ticks: {
-                                callback: value => "$" + Number(value).toLocaleString("en-US")
-                            },
-                            title: {
-                                display: true,
-                                text: "Revenue · USD"
-                            }
-                        }
-                    }
-                }
-            }
-        );
-
-        document.getElementById("revenue-tab")
-            .addEventListener("shown.bs.tab", () => revenueChart.resize());
-    }
-</script>
+<script src="/assets/assistant.js" defer></script>
 </body>
 </html>
+{% endif %}
