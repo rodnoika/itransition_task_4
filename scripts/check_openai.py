@@ -5,16 +5,15 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from dotenv import load_dotenv
-from assistant import GeminiPlanner
+from assistant import DEFAULT_OPENAI_MODEL, OpenAIPlanner, ProviderError
 from schemas import Query, ViewState, DashboardAction
 
 
 def main():
     load_dotenv(ROOT / '.env')
-    planner = GeminiPlanner.from_settings(os.getenv('GEMINI_API_KEY', ''), os.getenv('GEMINI_MODEL') or 'gemini-3.1-pro-preview')
+    planner = OpenAIPlanner.from_settings(os.getenv('OPENAI_API_KEY', ''), os.getenv('OPENAI_MODEL') or DEFAULT_OPENAI_MODEL)
     try:
-        info = planner.client.models.get(model=planner.model)
-        print(f'Model is accessible: {info.name}')
+        print(f'Checking OpenAI intent routing with {planner.model}')
         tests = [
             ('How many unique users in the current store?', 'query_data', Query),
             ('Select users with emails starting with s or p', 'set_dashboard_view', DashboardAction),
@@ -32,10 +31,13 @@ def main():
             if message.startswith('Keep') and (arguments.tab != 'books' or arguments.filters.person_name != 'include'):
                 raise SystemExit('PERSON command was mapped incorrectly')
             print(f'PASS: {message}')
-        print('Gemini checks passed. Only synthetic questions and empty dashboard state were sent.')
+        print('OpenAI checks passed. Only synthetic questions and empty dashboard state were sent.')
     finally:
         planner.client.close()
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except ProviderError as exc:
+        raise SystemExit(str(exc)) from None

@@ -1,11 +1,12 @@
 import json
 import re
 
-from google import genai
-from google.genai import types
+from openai import APIConnectionError, APIError, APIStatusError, OpenAI, pydantic_function_tool
 
 from schemas import AskRequest, Buyers, Clarify, DashboardAction, Query, ViewState
 
+
+DEFAULT_OPENAI_MODEL = 'gpt-5.6-luna'
 
 TOOL_MODELS = {
     'query_data': Query,
@@ -17,13 +18,25 @@ TOOL_MODELS = {
 DESCRIPTIONS = {
     'query_data': 'Compute exact server-side metrics. Users means distinct canonical identities within each store; user_records counts aliases. Revenue uses line totals, books_sold uses quantity. Empty store_ids means current store. Explicit filters replace all current filters; otherwise scope current_view uses current filters. group_by author fully credits each coauthor. all_records ignores the active filters. Limit 50 groups; use sort value_desc for top days/authors/books. No raw personal records.',
     'best_buyers': 'Find all tied highest-spending canonical buyers, including alias IDs, within the selected stores and scope. Server renders results privately; no personal data is returned to the model.',
-    'set_dashboard_view': 'Change the visible dashboard. Supply the FULL desired state: store_id, tab, filters. Copy unchanged filters from current state; reset filters to {} only when asked to clear them. person_name include keeps titles annotated with PERSON names, exclude removes them. email_prefixes is case-insensitive OR. Set tab users for user selection, books for title selection. Dates are inclusive ISO calendar dates.',
+    'set_dashboard_view': 'Change the visible dashboard. Supply the FULL desired state: store_id, tab, filters. Copy unchanged filters from current state; clear filter values only when asked to clear them. person_name include keeps titles annotated with PERSON names, exclude removes them. email_prefixes is case-insensitive OR. Set tab users for user selection, books for title selection. Dates are inclusive ISO calendar dates.',
     'clarify': 'Use when a request is ambiguous, asks for unsupported analysis, or requests private raw contact data. In particular, ambiguous "filter out" must be clarified unless the desired include/exclude meaning is explicit.',
 }
 
 
+def _without_defaults(value):
+    if isinstance(value, dict):
+        return {key: _without_defaults(item) for key, item in value.items() if key != 'default'}
+    if isinstance(value, list):
+        return [_without_defaults(item) for item in value]
+    return value
+
+
 def tool_declarations():
-    return [types.FunctionDeclaration(name=name, description=DESCRIPTIONS[name], parameters_json_schema=model.model_json_schema()) for name, model in TOOL_MODELS.items()]
+    tools = []
+    for name, model in TOOL_MODELS.items():
+        function = pydantic_function_tool(model, name=name, description=DESCRIPTIONS[name])['function']
+        tools.append({'type': 'function', **function, 'parameters': _without_defaults(function['parameters'])})
+    return tools
 
 
 def safe_message(message):
@@ -37,17 +50,16 @@ class ProviderError(RuntimeError):
         self.status_code = status_code
 
 
-class GeminiPlanner:
-    def __init__(self, client, model='gemini-3.1-pro-preview'):
+class OpenAIPlanner:
+    def __init__(self, client, model=DEFAULT_OPENAI_MODEL):
         self.client = client
         self.model = model
 
     @classmethod
     def from_settings(cls, api_key, model):
-        if not api_key:
-            raise ProviderError('GEMINI_API_KEY is not configured')
-        client = genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=35000, retry_options=types.HttpRetryOptions(attempts=1)))
-        return cls(client, model)
+        if not api_key or not api_key.strip():
+            raise ProviderError('OPENAI_API_KEY is not configured')
+        return cls(OpenAI(api_key=api_key.strip(), timeout=35.0, max_retries=0), model)
 
     def generate(self, message, state, allowed):
         serialized_state = state.model_dump_json()
@@ -66,35 +78,58 @@ For include person names use person_name=include. For exclude/remove people name
 If "filter out books that have people names" is ambiguous, clarify rather than choosing the wrong polarity.
 For selecting users whose emails start with s OR p use email_prefixes=["s","p"], tab=users.
 For unknown capabilities, contact details, a comparison requiring unsupported arithmetic, or ambiguous pronouns, use clarify.
+Every function property is required by the schema. For query_data, defaults are store_ids=[], scope="current_view", filters=null, group_by="none", sort="value_desc", limit=20. Use filters=null to retain current filters.
+For set_dashboard_view, copy the FULL current state and change only requested fields. Empty filter values are email_prefixes=[], person_name="any", title_contains="", author_contains="", genres=[], start_date=null, end_date=null.
 Do not emit an answer in prose; the server will produce verified text from your function arguments.'''
         payload = safe_message(json.dumps({'question': message, 'current_state': state.model_dump(mode='json'), 'allowed_stores': sorted(allowed)}, ensure_ascii=False))
-        thinking = None
-        if self.model.startswith('gemini-3.1-flash-lite'):
-            thinking = types.ThinkingConfig(thinking_level=types.ThinkingLevel.MINIMAL)
-        elif self.model.startswith('gemini-3.1-pro'):
-            thinking = types.ThinkingConfig(thinking_level=types.ThinkingLevel.LOW)
-        config = types.GenerateContentConfig(
-            system_instruction=system, candidate_count=1, max_output_tokens=4096,
-            thinking_config=thinking,
-            tools=[types.Tool(function_declarations=tool_declarations())],
-            automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
-            tool_config=types.ToolConfig(function_calling_config=types.FunctionCallingConfig(mode='ANY')),
-        )
+        options = {}
+        if self.model.startswith(DEFAULT_OPENAI_MODEL):
+            options['reasoning'] = {'effort': 'none'}
         try:
-            response = self.client.models.generate_content(model=self.model, contents=payload, config=config)
-        except Exception as exc:
-            if getattr(exc, 'code', None) == 429:
-                raise ProviderError('Gemini rate limit exceeded (429). Try again later or check your project limits in Google AI Studio. Filters were not changed.', status_code=429) from exc
-            if getattr(exc, 'code', None) == 503:
-                raise ProviderError('Gemini is temporarily unavailable (503). Please try again shortly. Filters were not changed.', status_code=503) from exc
-            raise ProviderError('Gemini request failed. Check model access, key, quota and network; no filters were changed.') from exc
-        candidates = response.candidates or []
-        if len(candidates) != 1 or not candidates[0].content:
-            raise ProviderError('Gemini did not return a usable function call')
+            response = self.client.responses.create(
+                model=self.model, instructions=system, input=payload,
+                tools=tool_declarations(), tool_choice='required', parallel_tool_calls=True,
+                store=False, max_output_tokens=4096, **options,
+            )
+        except APIStatusError as exc:
+            if exc.status_code == 429:
+                body = exc.body if isinstance(exc.body, dict) else {}
+                code = body.get('code') or body.get('error', {}).get('code')
+                if code == 'insufficient_quota':
+                    message = 'OpenAI API quota exhausted. Check API billing and project limits. Filters were not changed.'
+                else:
+                    message = 'OpenAI rate limit exceeded (429). Try again shortly or check project limits. Filters were not changed.'
+                raise ProviderError(message, status_code=429) from exc
+            if exc.status_code == 401:
+                message = 'OpenAI authentication failed. Check OPENAI_API_KEY in the deployment settings.'
+            elif exc.status_code == 403:
+                message = 'OpenAI access denied. Check API key permissions and model access.'
+            elif exc.status_code == 404:
+                message = 'OpenAI model is unavailable. Check OPENAI_MODEL and project model access.'
+            elif exc.status_code >= 500:
+                message = 'OpenAI is temporarily unavailable. Please try again shortly.'
+            else:
+                message = 'OpenAI request failed. Check model access and API configuration.'
+            raise ProviderError(message + ' Filters were not changed.') from exc
+        except APIConnectionError as exc:
+            raise ProviderError('OpenAI is temporarily unreachable or the request timed out. Please try again. Filters were not changed.') from exc
+        except APIError as exc:
+            raise ProviderError('OpenAI request failed. Please try again. Filters were not changed.') from exc
+        if response.status != 'completed':
+            raise ProviderError('OpenAI did not complete the request. Try again; no filters were changed.')
         calls = []
-        for part in candidates[0].content.parts or []:
-            if part.function_call:
-                calls.append((part.function_call.name, dict(part.function_call.args or {})))
+        for item in response.output or []:
+            if item.type != 'function_call':
+                continue
+            try:
+                arguments = json.loads(item.arguments)
+            except (TypeError, ValueError) as exc:
+                raise ProviderError('OpenAI returned invalid function arguments; no filters were changed.') from exc
+            if not isinstance(arguments, dict):
+                raise ProviderError('OpenAI returned invalid function arguments; no filters were changed.')
+            calls.append((item.name, arguments))
+        if not calls:
+            raise ProviderError('OpenAI did not return a usable function call; no filters were changed.')
         return calls
 
 

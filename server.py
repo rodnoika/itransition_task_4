@@ -18,7 +18,7 @@ from pydantic import ValidationError
 from dotenv import load_dotenv
 
 from analytics import Repository
-from assistant import Assistant, GeminiPlanner, ProviderError
+from assistant import Assistant, DEFAULT_OPENAI_MODEL, OpenAIPlanner, ProviderError
 from schemas import AskRequest, PreviewRequest, ViewState
 
 
@@ -208,7 +208,7 @@ def load_repository():
 
 @lru_cache(maxsize=1)
 def _cached_planner():
-    return GeminiPlanner.from_settings(os.getenv('GEMINI_API_KEY', ''), os.getenv('GEMINI_MODEL') or 'gemini-3.1-pro-preview')
+    return OpenAIPlanner.from_settings(os.getenv('OPENAI_API_KEY', ''), os.getenv('OPENAI_MODEL') or DEFAULT_OPENAI_MODEL)
 
 
 def load_planner():
@@ -281,7 +281,7 @@ async def forbidden(request, error):
 
 @app.exception_handler(ValueError)
 async def invalid_operation(request, error):
-    detail = 'Gemini returned invalid function arguments; no filters were changed' if isinstance(error, ValidationError) else str(error)
+    detail = 'OpenAI returned invalid function arguments; no filters were changed' if isinstance(error, ValidationError) else str(error)
     return JSONResponse({'detail': detail}, status_code=422)
 
 

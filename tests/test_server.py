@@ -103,12 +103,12 @@ def test_assistant_command_returns_changed_dashboard_and_browser_state(client, m
     assert result['view']['dashboard']['total_revenue_usd'] == 9.99
 
 
-def test_missing_gemini_key_returns_error_without_changing_view(client, monkeypatch):
+def test_missing_openai_key_returns_error_without_changing_view(client, monkeypatch):
     import server
     from assistant import ProviderError
 
     def unavailable():
-        raise ProviderError('GEMINI_API_KEY is not configured')
+        raise ProviderError('OPENAI_API_KEY is not configured')
 
     monkeypatch.setattr(server, 'load_planner', unavailable)
     result = client.post('/api/assistant', headers=headers(), json={'message': 'Apply filters'})
@@ -121,7 +121,7 @@ def test_quota_error_returns_429_without_changing_filters(client, monkeypatch):
     from assistant import ProviderError
 
     def exhausted():
-        raise ProviderError('Gemini project rate limit exceeded.', status_code=429)
+        raise ProviderError('OpenAI project rate limit exceeded.', status_code=429)
 
     monkeypatch.setattr(server, 'load_planner', exhausted)
     response = client.post('/api/assistant', headers=headers(), json={'message': 'Select users with s or p emails'})
@@ -131,10 +131,10 @@ def test_quota_error_returns_429_without_changing_filters(client, monkeypatch):
     assert client.get('/api/store/1', headers=headers()).json()['order_count'] == 3
 
 
-def test_gemini_client_is_reused_and_closed_on_server_shutdown(repository, monkeypatch):
+def test_openai_client_is_reused_and_closed_on_server_shutdown(repository, monkeypatch):
     import server
-    from assistant import GeminiPlanner
-    from google.genai import types
+    from assistant import OpenAIPlanner
+    from types import SimpleNamespace
 
     created = []
 
@@ -142,11 +142,11 @@ def test_gemini_client_is_reused_and_closed_on_server_shutdown(repository, monke
         closed = False
 
         def __init__(self):
-            self.models = self
+            self.responses = self
 
-        def generate_content(self, **kwargs):
+        def create(self, **kwargs):
             assert not self.closed
-            return types.GenerateContentResponse(candidates=[types.Candidate(content=types.Content(role='model', parts=[types.Part(function_call=types.FunctionCall(name='query_data', args={'metric': 'users'}))]))])
+            return SimpleNamespace(status='completed', output=[SimpleNamespace(type='function_call', name='query_data', arguments='{"metric":"users"}')])
 
         def close(self):
             self.closed = True
@@ -154,11 +154,11 @@ def test_gemini_client_is_reused_and_closed_on_server_shutdown(repository, monke
     def create(cls, api_key, model):
         connection = Connection()
         created.append(connection)
-        return GeminiPlanner(connection, model)
+        return OpenAIPlanner(connection, model)
 
     monkeypatch.setenv('ALLOWED_STORE_IDS', '1')
     monkeypatch.setattr(server, 'load_repository', lambda: repository)
-    monkeypatch.setattr(GeminiPlanner, 'from_settings', classmethod(create))
+    monkeypatch.setattr(OpenAIPlanner, 'from_settings', classmethod(create))
     with TestClient(server.app, base_url='http://localhost') as session:
         for _ in range(2):
             response = session.post('/api/assistant', headers=headers(), json={'message': 'How many users?'})
